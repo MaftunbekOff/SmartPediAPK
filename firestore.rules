@@ -1,0 +1,279 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'admin' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isActive', true) == true;
+    }
+    
+    // Helper function to check if user is authenticated and active
+    function isAuthenticatedAndActive() {
+      return request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isActive', true) == true;
+    }
+    
+    // Helper function to check if user owns the resource and is active
+    function isActiveOwner(userId) {
+      return request.auth != null && 
+        request.auth.uid == userId &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isActive', true) == true;
+    }
+    
+    // Helper function to check if user is a parent and active
+    function isActiveParent() {
+      return request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'parent' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isActive', true) == true;
+    }
+    
+    // Helper function to check if user owns the child and is active
+    function ownsChildAndActive(childId) {
+      return request.auth != null && 
+        exists(/databases/$(database)/documents/children/$(childId)) &&
+        get(/databases/$(database)/documents/children/$(childId)).data.parentId == request.auth.uid &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isActive', true) == true;
+    }
+    
+    // Helper function to validate required fields
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    // Users collection - Enhanced with status control
+    match /users/{userId} {
+      // Admins can read all users, active users can read their own data
+      allow read: if isAdmin() || isActiveOwner(userId);
+      
+      // User creation - allow during signup but must include isActive field
+      allow create: if request.auth != null && 
+        request.auth.uid == userId && 
+        hasRequiredFields(['email', 'displayName', 'role', 'isActive']) &&
+        request.resource.data.role in ['parent', 'admin'] &&
+        request.resource.data.isActive is bool;
+      
+      // User updates - admins can update any user (including status), active users can update their own data (except status)
+      allow update: if isAdmin() || 
+        (isActiveOwner(userId) && 
+         request.resource.data.role == resource.data.role &&
+         request.resource.data.isActive == resource.data.isActive);
+      
+      // Only admins can delete users
+      allow delete: if isAdmin();
+      
+      // Admins can list all users
+      allow list: if isAdmin();
+    }
+    
+    // Children collection - Only active users can access
+    match /children/{childId} {
+      allow read: if isAdmin() || ownsChildAndActive(childId);
+      allow create: if isActiveParent() &&
+        hasRequiredFields(['name', 'dateOfBirth', 'gender', 'parentId']) &&
+        request.resource.data.parentId == request.auth.uid &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.dateOfBirth is string &&
+        request.resource.data.gender in ['male', 'female'] &&
+        request.resource.data.allergies is list &&
+        request.resource.data.createdAt is timestamp &&
+        request.resource.data.updatedAt is timestamp;
+      allow update: if isAdmin() || ownsChildAndActive(childId);
+      allow delete: if isAdmin() || ownsChildAndActive(childId);
+      allow list: if isAdmin();
+    }
+    
+    // Growth Records collection - Only active users can access
+    match /growthRecords/{recordId} {
+      allow read: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow create: if isActiveParent() &&
+        hasRequiredFields(['childId', 'parentId', 'date', 'height', 'weight', 'createdAt']) &&
+        request.resource.data.parentId == request.auth.uid &&
+        ownsChildAndActive(request.resource.data.childId) &&
+        request.resource.data.height is number &&
+        request.resource.data.weight is number &&
+        request.resource.data.date is string &&
+        request.resource.data.createdAt is timestamp;
+      allow update: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow delete: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow list: if isAdmin();
+    }
+    
+    // Health Reminders collection - Only active users can access
+    match /healthReminders/{reminderId} {
+      allow read: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow create: if isActiveParent() &&
+        hasRequiredFields(['childId', 'parentId', 'type', 'title', 'time', 'frequency', 'isActive']) &&
+        request.resource.data.parentId == request.auth.uid &&
+        ownsChildAndActive(request.resource.data.childId) &&
+        request.resource.data.type in ['medicine', 'meal', 'water', 'sleep', 'appointment', 'exercise'] &&
+        request.resource.data.frequency in ['daily', 'weekly', 'monthly', 'once', 'custom'] &&
+        request.resource.data.isActive is bool &&
+        request.resource.data.createdAt is timestamp &&
+        request.resource.data.updatedAt is timestamp;
+      allow update: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow delete: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow list: if isAdmin();
+    }
+    
+    // Milestone Tests collection - Only active users can read
+    match /tests/{testId} {
+      allow read: if isAuthenticatedAndActive() && resource.data.isActive == true;
+      allow create, update, delete: if isAdmin();
+      allow list: if isAuthenticatedAndActive();
+    }
+    
+    // Test Results collection - Only active users can access
+    match /testResults/{resultId} {
+      allow read: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow create: if isActiveParent() &&
+        hasRequiredFields(['childId', 'parentId', 'testId', 'answers', 'score', 'totalQuestions', 'correctAnswers', 'recommendation', 'submittedAt']) &&
+        request.resource.data.parentId == request.auth.uid &&
+        ownsChildAndActive(request.resource.data.childId) &&
+        request.resource.data.score is number &&
+        request.resource.data.totalQuestions is number &&
+        request.resource.data.correctAnswers is number &&
+        request.resource.data.answers is list &&
+        request.resource.data.recommendation is map &&
+        request.resource.data.submittedAt is timestamp &&
+        request.resource.data.completedAt is timestamp &&
+        request.resource.data.createdAt is timestamp;
+      allow update: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow delete: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow list: if isAdmin();
+    }
+    
+    // Nutrition Records collection - Only active users can access
+    match /nutritionRecords/{recordId} {
+      allow read: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow create: if isActiveParent() &&
+        hasRequiredFields(['childId', 'parentId', 'date', 'mealType', 'items']) &&
+        request.resource.data.parentId == request.auth.uid &&
+        ownsChildAndActive(request.resource.data.childId) &&
+        request.resource.data.mealType in ['breakfast', 'lunch', 'dinner', 'snack'] &&
+        request.resource.data.items is list &&
+        request.resource.data.completed is bool &&
+        request.resource.data.createdAt is timestamp;
+      allow update: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow delete: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow list: if isAdmin();
+    }
+    
+    // Illness Info collection - Only active users can read
+    match /illnessInfo/{illnessId} {
+      allow read: if isAuthenticatedAndActive();
+      allow list: if isAuthenticatedAndActive();
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Media items - Only active users can read
+    match /mediaItems/{mediaId} {
+      allow read, list: if isAuthenticatedAndActive();
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Announcements - Only active users can read
+    match /announcements/{announcementId} {
+      allow read: if isAuthenticatedAndActive();
+      allow list: if isAuthenticatedAndActive();
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Health Timeline - Only active users can access
+    match /healthTimeline/{timelineId} {
+      allow read: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow create: if isAuthenticatedAndActive() && 
+        hasRequiredFields(['childId', 'parentId', 'type', 'title', 'date', 'createdBy']) &&
+        request.resource.data.parentId == request.auth.uid &&
+        ownsChildAndActive(request.resource.data.childId) &&
+        request.resource.data.type in ['vaccination', 'illness', 'checkup', 'medication', 'injury', 'allergy', 'milestone', 'growth', 'appointment', 'note'] &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.createdAt is timestamp &&
+        request.resource.data.updatedAt is timestamp;
+      allow update: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid &&
+        request.resource.data.updatedAt is timestamp);
+      allow delete: if isAdmin();
+      allow list: if isAdmin();
+    }
+    
+    // User-specific queries for active users only
+    match /healthTimeline/{document=**} {
+      allow list: if isAuthenticatedAndActive() && request.query.where('parentId', '==', request.auth.uid);
+    }
+    
+    match /children/{document=**} {
+      allow list: if isAuthenticatedAndActive() && request.query.where('parentId', '==', request.auth.uid);
+    }
+    
+    match /growthRecords/{document=**} {
+      allow list: if isAuthenticatedAndActive() && request.query.where('parentId', '==', request.auth.uid);
+    }
+    
+    match /healthReminders/{document=**} {
+      allow list: if isAuthenticatedAndActive() && request.query.where('parentId', '==', request.auth.uid);
+    }
+    
+    match /testResults/{document=**} {
+      allow list: if isAuthenticatedAndActive() && request.query.where('parentId', '==', request.auth.uid);
+    }
+    
+    match /nutritionRecords/{document=**} {
+      allow list: if isAuthenticatedAndActive() && request.query.where('parentId', '==', request.auth.uid);
+    }
+    
+    match /childMilestones/{document=**} {
+      allow list: if isAuthenticatedAndActive() && request.query.where('parentId', '==', request.auth.uid);
+    }
+    
+    // Milestone Test Templates - Only active users can read
+    match /milestoneTestTemplates/{templateId} {
+      allow read: if isAuthenticatedAndActive();
+      allow list: if isAuthenticatedAndActive();
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Milestone Test Attempts - Only active users can access
+    match /milestoneTestAttempts/{attemptId} {
+      allow read: if isAuthenticatedAndActive() && resource.data.userId == request.auth.uid;
+      allow create: if isActiveParent() &&
+        hasRequiredFields(['userId', 'milestoneId', 'testTemplateId', 'answers', 'result']) &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.completedAt is timestamp &&
+        request.resource.data.createdAt is timestamp;
+      allow update: if isAuthenticatedAndActive() && resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+      allow list: if isAdmin();
+    }
+    
+    match /milestoneTestAttempts/{document=**} {
+      allow list: if isAuthenticatedAndActive() && request.query.where('userId', '==', request.auth.uid);
+    }
+    
+    // Milestones - Only active users can read
+    match /milestones/{milestoneId} {
+      allow read: if isAuthenticatedAndActive();
+      allow list: if isAuthenticatedAndActive();
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Child Milestones - Only active parents can manage
+    match /childMilestones/{childMilestoneId} {
+      allow read: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow create: if isActiveParent() &&
+        hasRequiredFields(['childId', 'parentId', 'milestoneId', 'achieved']) &&
+        request.resource.data.parentId == request.auth.uid &&
+        ownsChildAndActive(request.resource.data.childId) &&
+        request.resource.data.createdAt is timestamp &&
+        request.resource.data.updatedAt is timestamp;
+      allow update: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow delete: if isAdmin() || (isAuthenticatedAndActive() && resource.data.parentId == request.auth.uid);
+      allow list: if isAdmin();
+    }
+  }
+}

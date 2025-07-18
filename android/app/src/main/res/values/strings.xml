@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SmartPedi</string>
+    <string name="title_activity_main">SmartPedi - Bolalar Salomatligi</string>
+    <string name="package_name">com.smartpedi.app</string>
+    <string name="custom_url_scheme">smartpedi</string>
+    
+    <!-- App Description -->
+    <string name="app_description">Bolalar salomatligini kuzatish va rivojlanish bosqichlarini baholash uchun aqlli yordamchi</string>
+    
+    <!-- Notification Channels -->
+    <string name="health_reminders_channel_name">Salomatlik eslatmalari</string>
+    <string name="health_reminders_channel_description">Dori, ovqat va boshqa salomatlik eslatmalari</string>
+    
+    <string name="growth_tracking_channel_name">O\'sish kuzatuvi</string>
+    <string name="growth_tracking_channel_description">Bo\'y va vazn o\'lchovlari eslatmalari</string>
+    
+    <string name="milestone_tests_channel_name">Rivojlanish testlari</string>
+    <string name="milestone_tests_channel_description">Rivojlanish bosqichlari va test eslatmalari</string>
+    
+    <!-- Error Messages -->
+    <string name="network_error">Internet aloqasi yo\'q. Iltimos, ulanishni tekshiring.</string>
+    <string name="permission_denied">Ruxsat berilmagan. Iltimos, sozlamalarni tekshiring.</string>
+    <string name="data_sync_error">Ma\'lumotlar sinxronlashtirishda xatolik yuz berdi.</string>
+    
+    <!-- Success Messages -->
+    <string name="data_saved">Ma\'lumotlar muvaffaqiyatli saqlandi</string>
+    <string name="reminder_set">Eslatma o\'rnatildi</string>
+    <string name="profile_updated">Profil yangilandi</string>
+</resources>
